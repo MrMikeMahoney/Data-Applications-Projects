@@ -1,0 +1,135 @@
+---
+title: "Video Game"
+author: "Mike Mahoney"
+date: "January 14, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(tree)
+library(pastecs)
+library(e1071)
+library(spatstat.utils)
+```
+
+Created a New Data Set: vg_data that imported from excel
+
+```{r cars}
+vg_data = read.csv(file = "C:/Users/Mike/Documents/Video_Game_Sales_as_of_Jan_2017.csv/Video_Game_Sales_as_of_Jan_2017.csv")
+vg_data_01 = vg_data
+vg_data_01$Critic_Score_Metals <- vg_data_01$Critic_Score
+vg_data_01$User_Score_Cat <- vg_data_01$User_Score
+```
+Recoded User score column 13, by multipling by 10 (13)
+```{r}
+vg_data_01[13] = vg_data[13]*10
+```
+Created a new Column: Critic_Score_Metals, which is a recoded copy of Critic_Score that is categorical
+```{r}
+vg_data_01$Critic_Score_Metals[vg_data_01$Critic_Score >= 90] <- "Gold"
+vg_data_01$Critic_Score_Metals[89 >= vg_data_01$Critic_Score & vg_data_01$Critic_Score >= 80] <- "Silver" 
+vg_data_01$Critic_Score_Metals[79 >= vg_data_01$Critic_Score & vg_data_01$Critic_Score >= 70] <- "Bronze"
+vg_data_01$Critic_Score_Metals[69 >= vg_data_01$Critic_Score & vg_data_01$Critic_Score >= 50] <- "Steel"
+vg_data_01$Critic_Score_Metals[49 >= vg_data_01$Critic_Score] <- "Aluminum"
+```
+Created a new Column: User_Score_Cat, which is a recoded copy of User_Score that is categorical
+```{r}
+vg_data_01$User_Score_Cat[vg_data_01$User_Score >= 90] <- "A"
+vg_data_01$User_Score_Cat[89 >= vg_data_01$User_Score & vg_data_01$User_Score >= 80] <- "B" 
+vg_data_01$User_Score_Cat[79 >= vg_data_01$User_Score & vg_data_01$User_Score >= 70] <- "C"
+vg_data_01$User_Score_Cat[69 >= vg_data_01$User_Score & vg_data_01$User_Score >= 50] <- "D"
+vg_data_01$User_Score_Cat[49 >= vg_data_01$User_Score & vg_data_01$User_Score >= 0] <- "F"
+vg_data_01$User_Score_Cat[vg_data_01$Name == "Pool Party"] <- "F"
+vg_data_01$User_Score_Cat[vg_data_01$Name == "Dragon Ball: Evolution"] <- "F"
+```
+
+Created another Data Frame, dropping the NA's from User_score, Critic_score and Ratings
+```{r}
+#summary(vg_data_01)
+vg_data_no_na <- vg_data_01 %>% drop_na()
+summary(vg_data_no_na)
+```
+Creates a variable year_count which provides a count for videos games released by year
+```{r}
+year_group <- group_by(vg_data_no_na, vg_data_no_na$Year_of_Release)
+year_count <- summarize(year_group, count = n())
+```
+Creates a variable global_sales_count which provides a count for videos games global sales
+```{r}
+global_sales_group <- group_by(vg_data_no_na, vg_data_no_na$Global_Sales)
+global_sales_count <- summarize(global_sales_group, count = n())
+```
+Creates a total sum of global sales across all years (GLOBAL), by creating a vector and binding it to year
+```{r}
+#test_vg_data <- vg_data_no_na 
+vg_data_no_na$Year_of_Release <- as.character.Date(vg_data_no_na$Year_of_Release, format = "%Y")
+Total_Global_by_Year_cumulative <- tapply(vg_data_no_na$Global_Sales, vg_data_no_na$Year_of_Release, FUN=sum)
+Total_Global_by_Year <- cbind.data.frame(Total_Global_by_Year_cumulative, year_count[0])
+```
+Creates a total sum of NA(North America) sales across all years (NA), by creating a vector and binding it to year
+```{r}
+Total_NA_by_Year_cumulative <- tapply(vg_data_no_na$NA_Sales, vg_data_no_na$Year_of_Release, FUN=sum)
+Total_NA_by_Year <- cbind.data.frame(Total_NA_by_Year_cumulative, year_count[0])
+```
+Create a total sum of global sales by console
+```{r}
+#vg_data_no_na$Platform <- vg_data_no_na$Platform %>% drop_na()
+platform_group <- group_by(vg_data_no_na, vg_data_no_na$Platform)
+platform_count <- summarize(platform_group, count = n())
+Total_Global_by_console_sum <- tapply(vg_data_no_na$Global_Sales, vg_data_no_na$Platform, FUN=sum, na.rm=TRUE)
+Total_Global_by_console_sum <- Total_Global_by_console_sum[!is.na(Total_Global_by_console_sum)]
+#Total_Global_by_console_sum <-NULL
+Total_Global_by_console <- cbind.data.frame(Total_Global_by_console_sum, platform_count[0])
+```
+
+Deleting some extra data sets ### Cleaning up data sets
+```{r}
+vg_data_01 <- NULL
+vg_data_explore <- NULL
+vg_datat <- NULL
+test_vg_data <- NULL
+vg_final_data <- vg_data_no_na
+vg_data_no_na <- NULL
+```
+North_America_vg data set >> Only showing vlaues above NA_Sales == 2
+```{r}
+North_America_vg <- vg_final_data
+North_America_vg$EU_Sales <- NULL
+North_America_vg$JP_Sales <- NULL
+North_America_vg$Other_Sales <- NULL
+North_America_vg$Global_Sales <- NULL
+North_America_vg$success <- NULL
+North_America_vg$success <- ifelse(North_America_vg$NA_Sales >= 5.0, "1", "0")
+North_America_vg$success <- factor(North_America_vg$success)
+North_America_vg$NA_Sales[North_America_vg$success==0.0] <- NA
+#North_America_vg$NA_Sales[North_America_vg$NA_Sales==0.0] <- NA
+North_America_vg <- North_America_vg %>% drop_na()
+#set.seed(1984) ##Seeds used: 420, 1776
+#divide_vg_data <- sample(1:6493, size = 0.3*6493)
+#vg_test <- North_America_vg[divide_vg_data,]
+#vg_train <- North_America_vg[-divide_vg_data,]
+```
+
+
+
+Creating Scatter Plots >> NA_Sales vs Critic_Score
+```{r}
+library(plotly)
+NA_VS_Critic_Socre <- ggplot(North_America_vg, aes(x= Critic_Score, y = NA_Sales, color = Genre, text =(label=North_America_vg$Name))) + geom_point()
+p <- ggplotly(NA_VS_Critic_Socre)
+p
+#devtools::install_github('hadley/ggplot2')
+```
+Creating Scatterplots >> NA_Sales vs User_Score
+```{r}
+library(plotly)
+NA_VS_User_Score <- ggplot(North_America_vg, aes(x= User_Score , y = NA_Sales, color = Genre, text =(label=North_America_vg$Name))) + geom_point()
+p <- ggplotly(NA_VS_User_Score)
+p
+```
+
