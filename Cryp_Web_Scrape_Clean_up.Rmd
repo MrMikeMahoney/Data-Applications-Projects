@@ -1,0 +1,189 @@
+---
+title: "Cleaning up web scraped data"
+author: "Mike Mahoney"
+date: "February 24, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lubridate)
+#library(varhandle)
+library(tidyr)
+```
+
+```{r}
+test <- read.csv("C:/Users/Mike/Crypto_Scraped_Data.csv")
+ws_2017 <- read.csv("C:/Users/Mike/Crypto_Better_Scrape.csv", stringsAsFactors=FALSE)
+ws_2017 <- ws_2017 %>% drop_na()
+test_1 <- test
+test_1 <- ws_2017
+```
+
+## This is changing Date into a "Date" >> Also converting our columns to numeric
+```{r}
+test_1$Date <- gsub("/", "" ,test_1$Date)
+test_1$Date <- gsub(" ", "-", test_1$Date)
+#test$Date <- as.Date(test$Date, format = "%y/%m/%d")
+#test_1 <- test
+#nzd$date <- format(as.Date(nzd$date, format = "%b-%d-%Y"), "%Y-%m-%d")
+test_1$Date <- format(as.Date(test_1$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+#test_1$Date <- mdy(test_1$Date)
+crypto_ws <- test_1
+test_1 <- NULL
+test <- NULL
+#crypto_ws <- format(crypto_ws, scientific = FALSE)
+crypto_ws$Open <- as.numeric(crypto_ws$Open, options(digits=10))#options(nsmall=2)) #, scientific = FALSE)
+crypto_ws$High <- as.numeric(crypto_ws$High) #, options(scipen = 999))
+crypto_ws$Low <- as.numeric(crypto_ws$Low, options(digits=10))
+crypto_ws$Close <- as.numeric(crypto_ws$Close, options(digits=10))
+crypto_ws$Volume <- as.numeric(crypto_ws$Volume, options(digits=10))
+crypto_ws$Market.Cap <- as.numeric(crypto_ws$Market.Cap, options(scipen = 999))
+#class(crypto_ws$High)
+#test_1$Date <- as.Date(test$Date, format = "%y/%m/%d")
+```
+
+## Adding our OHLC variable
+```{r}
+i = 1
+for (i in 1:nrow(crypto_ws)) {
+OHLC <- sum(crypto_ws[i,3:6]) #;OHLC
+crypto_ws$OHLC[i] <- OHLC/4
+}
+```
+
+## Adding Spread variable
+```{r}
+crypto_ws$Spread <- NULL
+i = 1
+for (i in 1:nrow(crypto_ws)) {
+Spread <- (crypto_ws$High - crypto_ws$Low)
+crypto_ws$Spread[i] <- Spread[i]
+}
+```
+
+#Adding Days if the week so we can measure violitlity >> i.e: 4/28/13 is Sunday, Sunday has been added in the "day" column for data frame crytpo
+```{r}
+dow <- function(x) format(as.Date(x), "%A")
+crypto_data_update <- dow(crypto_ws$Date)
+crypto <- crypto_ws
+crypto[["Day"]] <- crypto_data_update
+
+```
+
+#Creating a Bitcoin_ws subset >> To check if we are getting the same data from web scrape and Kaggle
+```{r}
+Bitcoin_ws <- subset(crypto, Slug == "bitcoin")
+
+#Bitcoin[order(as.Date(Bitcoin$date, "%Y-%m-%d", decreasing = TRUE) ]
+Bitcoin[order(as.Date(Bitcoin$date, "%Y-%m-%d"), decreasing = TRUE),]
+#Bitcoin_1_year[order(as.Date(Bitcoin_1_year$date, "%Y-%m-%d"), decreasing = TRUE),]
+BTC_1_yr_WS <- subset(Bitcoin_ws, Date >= "2017-01-01" & Date <= "2018-02-05")
+date_range = seq(as.Date("2017-01-01"), as.Date("2018-02-05"), "days")
+
+```
+
+# This code takes the difference of the two datasets OHLC >> Which was 0!!!
+```{r}
+#seq(as.Date("1910/1/1"), as.Date("1999/1/1"), "years")
+
+date_range = seq(as.Date("2017-01-01"), as.Date("2018-02-05"), "days")
+#date_range = "2017-01-01" 
+for (i in 1:401) {
+  Bitcoin_1_year <- Bitcoin_1_year[order(as.Date(Bitcoin_1_year$date, "%Y-%m-%d"), decreasing = TRUE),]
+  BTC_1_yr_WS <- BTC_1_yr_WS[order(as.Date(BTC_1_yr_WS$Date, "%Y-%m-%d"), decreasing = TRUE),]
+  diff <- (BTC_1_yr_WS$OHLC - Bitcoin_1_year$OHLC)
+  diff <- diff[i]
+}
+```
+
+
+####### Creating the variables for Bitcoin_Ancient
+## Loading the Ancient Bitcoin Data >> Applying thr similar formats >> to Bitcoin_Ancient
+```{r}
+Bitcoin_Ancient <- read.csv("C:/Users/Mike/Bitcoin_Scrape.csv")
+
+Bitcoin_Ancient$Date <- gsub("/", "" ,Bitcoin_Ancient$Date)
+Bitcoin_Ancient$Date <- gsub(" ", "-", Bitcoin_Ancient$Date)
+Bitcoin_Ancient$Date <- format(as.Date(Bitcoin_Ancient$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+#crypto_ws <- format(crypto_ws, scientific = FALSE)
+Bitcoin_Ancient$Open <- as.numeric(Bitcoin_Ancient$Open, options(digits=10))#options(nsmall=2)) #, scientific = FALSE)
+Bitcoin_Ancient$High <- as.numeric(Bitcoin_Ancient$High) #, options(scipen = 999))
+Bitcoin_Ancient$Low <- as.numeric(Bitcoin_Ancient$Low, options(digits=10))
+Bitcoin_Ancient$Close <- as.numeric(Bitcoin_Ancient$Close, options(digits=10))
+Bitcoin_Ancient$Volume <- as.numeric(Bitcoin_Ancient$Volume, options(scipen = 999))
+Bitcoin_Ancient$Market.Cap <- as.numeric(Bitcoin_Ancient$Market.Cap, options(scipen = 999))
+```
+
+## OHLC for Bitcoin_Ancient
+```{r}
+i = 1
+for (i in 1:nrow(Bitcoin_Ancient)) {
+OHLC <- sum(Bitcoin_Ancient[i,3:6]) #;OHLC
+Bitcoin_Ancient$OHLC[i] <- OHLC/4
+}
+```
+
+## Adding Spread variable for Bitcoin_Ancient
+```{r}
+#crypto_ws$Spread <- NULL
+i = 1
+for (i in 1:nrow(Bitcoin_Ancient)) {
+Spread <- (Bitcoin_Ancient$High - Bitcoin_Ancient$Low)
+Bitcoin_Ancient$Spread[i] <- Spread[i]
+}
+```
+
+## Appending Our Data Sets >> Merging the Bitcoin subset with the scrape from 04/28/13 to 12/31/2016
+```{r}
+#Bitcoin_Ancient <- read.csv("C:/Users/Mike/Bitcoin_Scrape.csv")
+Bitcoin <- subset(crypto_ws, Slug == "bitcoin")
+Bitcoin_merge <- rbind(Bitcoin, Bitcoin_Ancient) 
+Bitcoin <- Bitcoin_merge
+Bitcoin_merge <- NULL
+```
+
+####### Creating the variables for Ripple_Ancient
+## Loading the Ripple Ripple Data >> Applying thr similar formats >> to Ripple_Ancient
+```{r}
+Ripple_Ancient <- read.csv("C:/Users/Mike/Ripple_Scrape.csv")
+
+Ripple_Ancient$Date <- gsub("/", "" ,Ripple_Ancient$Date)
+Ripple_Ancient$Date <- gsub(" ", "-", Ripple_Ancient$Date)
+Ripple_Ancient$Date <- format(as.Date(Ripple_Ancient$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+#crypto_ws <- format(crypto_ws, scientific = FALSE)
+Ripple_Ancient$Open <- as.numeric(Ripple_Ancient$Open, options(digits=10))#options(nsmall=2)) #, scientific = FALSE)
+Ripple_Ancient$High <- as.numeric(Ripple_Ancient$High) #, options(scipen = 999))
+Ripple_Ancient$Low <- as.numeric(Ripple_Ancient$Low, options(digits=10))
+Ripple_Ancient$Close <- as.numeric(Ripple_Ancient$Close, options(digits=10))
+Ripple_Ancient$Volume <- as.numeric(Ripple_Ancient$Volume, options(scipen = 999))
+Ripple_Ancient$Market.Cap <- as.numeric(Ripple_Ancient$Market.Cap, options(scipen = 999))
+```
+
+## OHLC for Litecoin_Ancient
+```{r}
+i = 1
+for (i in 1:nrow(Ripple_Ancient)) {
+OHLC <- sum(Ripple_Ancient[i,3:6]) #;OHLC
+Ripple_Ancient$OHLC[i] <- OHLC/4
+}
+```
+
+## Adding Spread variable for Litecoin_Ancient
+```{r}
+#crypto_ws$Spread <- NULL
+i = 1
+for (i in 1:nrow(Ripple_Ancient)) {
+Spread <- (Ripple_Ancient$High - Ripple_Ancient$Low)
+Ripple_Ancient$Spread[i] <- Spread[i]
+}
+```
+
+## Appending Our Data Sets >> Merging the Litecoin subset with the scrape from 01/01/2017 to 09/07/2017
+```{r}
+#Bitcoin_Ancient <- read.csv("C:/Users/Mike/Bitcoin_Scrape.csv")
+Ripple <- subset(crypto_ws, Slug == "ripple")
+Ripple_Merge <- rbind(Ripple, Ripple_Ancient) 
+Ripple <- Ripple_Merge
+Ripple_Merge <- NULL
+```
