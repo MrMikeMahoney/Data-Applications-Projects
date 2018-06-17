@@ -1,0 +1,387 @@
+---
+title: "vg_more_models"
+author: "Mike Mahoney"
+date: "January 29, 2018"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(tree)
+library(pastecs)
+library(e1071)
+library(spatstat.utils)
+library(MASS)
+```
+
+Created a New Data Set: vg_data that imported from excel
+
+```{r cars}
+vg_data = read.csv(file = "C:/Users/Mike/Documents/Video_Game_Sales_as_of_Jan_2017.csv/Video_Game_Sales_as_of_Jan_2017.csv")
+vg_data_01 = vg_data
+vg_data_01$Critic_Score_Metals <- vg_data_01$Critic_Score
+vg_data_01$User_Score_Cat <- vg_data_01$User_Score
+```
+Recoded User score column 13, by multipling by 10 (13)
+```{r}
+vg_data_01[13] = vg_data[13]*10
+```
+Created a new Column: Critic_Score_Metals, which is a recoded copy of Critic_Score that is categorical
+```{r}
+vg_data_01$Critic_Score_Metals[vg_data_01$Critic_Score >= 90] <- "Gold"
+vg_data_01$Critic_Score_Metals[89 >= vg_data_01$Critic_Score & vg_data_01$Critic_Score >= 80] <- "Silver" 
+vg_data_01$Critic_Score_Metals[79 >= vg_data_01$Critic_Score & vg_data_01$Critic_Score >= 70] <- "Bronze"
+vg_data_01$Critic_Score_Metals[69 >= vg_data_01$Critic_Score & vg_data_01$Critic_Score >= 50] <- "Steel"
+vg_data_01$Critic_Score_Metals[49 >= vg_data_01$Critic_Score] <- "Aluminum"
+```
+Created a new Column: User_Score_Cat, which is a recoded copy of User_Score that is categorical
+```{r}
+vg_data_01$User_Score_Cat[vg_data_01$User_Score >= 90] <- "A"
+vg_data_01$User_Score_Cat[89 >= vg_data_01$User_Score & vg_data_01$User_Score >= 80] <- "B" 
+vg_data_01$User_Score_Cat[79 >= vg_data_01$User_Score & vg_data_01$User_Score >= 70] <- "C"
+vg_data_01$User_Score_Cat[69 >= vg_data_01$User_Score & vg_data_01$User_Score >= 50] <- "D"
+vg_data_01$User_Score_Cat[49 >= vg_data_01$User_Score & vg_data_01$User_Score >= 0] <- "F"
+vg_data_01$User_Score_Cat[vg_data_01$Name == "Pool Party"] <- "F"
+vg_data_01$User_Score_Cat[vg_data_01$Name == "Dragon Ball: Evolution"] <- "F"
+```
+
+Created another Data Frame, dropping the NA's from User_score, Critic_score and Ratings
+```{r}
+#summary(vg_data_01)
+vg_data_no_na <- vg_data_01 %>% drop_na()
+summary(vg_data_no_na)
+```
+Creates a variable year_count which provides a count for videos games released by year
+```{r}
+year_group <- group_by(vg_data_no_na, vg_data_no_na$Year_of_Release)
+year_count <- summarize(year_group, count = n())
+```
+Creates a variable global_sales_count which provides a count for videos games global sales
+```{r}
+global_sales_group <- group_by(vg_data_no_na, vg_data_no_na$Global_Sales)
+global_sales_count <- summarize(global_sales_group, count = n())
+```
+Creates a total sum of global sales across all years (GLOBAL), by creating a vector and binding it to year
+```{r}
+#test_vg_data <- vg_data_no_na 
+vg_data_no_na$Year_of_Release <- as.character.Date(vg_data_no_na$Year_of_Release, format = "%Y")
+Total_Global_by_Year_cumulative <- tapply(vg_data_no_na$Global_Sales, vg_data_no_na$Year_of_Release, FUN=sum)
+Total_Global_by_Year <- cbind.data.frame(Total_Global_by_Year_cumulative, year_count[0])
+```
+Creates a total sum of NA(North America) sales across all years (NA), by creating a vector and binding it to year
+```{r}
+Total_NA_by_Year_cumulative <- tapply(vg_data_no_na$NA_Sales, vg_data_no_na$Year_of_Release, FUN=sum)
+Total_NA_by_Year <- cbind.data.frame(Total_NA_by_Year_cumulative, year_count[0])
+```
+Create a total sum of global sales by console
+```{r}
+#vg_data_no_na$Platform <- vg_data_no_na$Platform %>% drop_na()
+platform_group <- group_by(vg_data_no_na, vg_data_no_na$Platform)
+platform_count <- summarize(platform_group, count = n())
+Total_Global_by_console_sum <- tapply(vg_data_no_na$Global_Sales, vg_data_no_na$Platform, FUN=sum, na.rm=TRUE)
+Total_Global_by_console_sum <- Total_Global_by_console_sum[!is.na(Total_Global_by_console_sum)]
+#Total_Global_by_console_sum <-NULL
+Total_Global_by_console <- cbind.data.frame(Total_Global_by_console_sum, platform_count[0])
+```
+
+Deleting some extra data sets ### Cleaning up data sets
+```{r}
+vg_data_01 <- NULL
+vg_data_explore <- NULL
+vg_datat <- NULL
+test_vg_data <- NULL
+vg_final_data <- vg_data_no_na
+vg_data_no_na <- NULL
+```
+Splitting Data into Training and Test Data >> Also creating our logit variable "success" which is defined as a hit if Global_Sales are greater than 5
+```{r}
+vg_final_data$success <- ifelse(vg_final_data$Global_Sales >= 5.0, "1", "0")
+vg_final_data$success <- factor(vg_final_data$success)
+set.seed(1776) ##Seeds used: 420
+divide_vg_data <- sample(1:7191, size = 0.3*7191)
+vg_test <- vg_final_data[divide_vg_data,]
+vg_train <- vg_final_data[-divide_vg_data,]
+```
++-+-+-+-+-+-+
+\newline
++-+-+-+-+-+-+
+
+Performing a Log Regression on Data Set
+##Disclaimer: No Industry standad for a video game success is given, therefore we are trying different thresholds
+##Note: vg_log_model_all_vars <- glm(success~Genre+Publisher+Platform+NA_Sales+EU_Sales+JP_Sales+Other_Sales+Critic_Score+User_Score+Rating, data = vg_train, family = "binomial") >>>> Gives Errors due to over fitting
+
+Predicting Global Sucess >> using JP_Sales
+```{r}
+vg_log_model_all_vars <- glm(success~JP_Sales+Critic_Score, data = vg_train, family = "binomial")
+anova(vg_log_model_all_vars, test="Chisq")
+summary(vg_log_model_all_vars)
+```
+Building Logit Prediction Model to predict if VG will be a hit 
+```{r}
+global_hit_predict <- predict(vg_log_model_all_vars, newdata = vg_test, type = "response")
+global_hit_predict <- ifelse(global_hit_predict >= 0.5, "1", "0")
+cf_matrix_global_hit <- table(global_hit_predict, vg_test$success);cf_matrix_global_hit
+error_global_hit <- mean(global_hit_predict != vg_test$success);error_global_hit
+print(paste("The Logistic Regression Accuracy: ", 1-error_global_hit))
+```
+### This is the Japan >> Predicting Global Success >> Only Two vars needed to predict success
++-+-+-+-+-+-+
+
+Lets try a tree model with or JP_sales ### Japan Sales
+```{r}
+tree_vg <- tree(success~JP_Sales+Critic_Score+Genre, data = vg_train)
+summary(tree_vg)
+```
+Lets prune this tree >> Using: "Cross Validation", said Dr Ko.
+```{r}
+set.seed(420)
+cv_tree_vg <- cv.tree(tree_vg, FUN = prune.misclass)
+names(cv_tree_vg)
+cv_tree_vg
+```
+Best tree = 3
+```{r}
+prune_tree_vg <- prune.misclass(tree_vg, best=7)
+plot(prune_tree_vg)
+text(prune_tree_vg, pretty = 0)
+```
+\newline +-+-+-+-+-+
+Applying pruned tree to North_America_vg test data
+```{r}
+prune_tree_vg <- prune.misclass(tree_vg, best=11)
+tree_pred_vg <- predict(prune_tree_vg, vg_test, type = "class")
+cf_tree_vg <- table(tree_pred_vg, vg_test$success);cf_tree_vg
+cf_tree_vg_error <- mean(tree_pred_vg != vg_test$success);cf_tree_vg_error
+print(paste("The Tree based method Accuracy: ", 1-cf_tree_vg_error))
+```
+Tree prediction for Global Sales Using JP_Sales
++-+-+-+-+-+-+
+SVM for JP_Sales
+```{r}
+svm_vg <- success~JP_Sales+Critic_Score+Platform
+#tune_out <- tune.svm(svm_vg, data = vg_train, gamma=c(0.1, 1, 10, 100, 1000), cost=c(.001, .01, .1, 1, 10))
+summary(tune_out)
+```
+Best Gamma = 0.1; Best Cost = 1; Best Performance = 0.006356307
+\newline -+-+-+-+-+
+SVM >> A better tuned model >> JP_Sales
+```{r}
+svm_vg_tuned <- svm(formula= svm_vg, data = vg_test, gamma = 0.1, cost = 1)
+summary(svm_vg_tuned)
+svm_vg_tuned_error <- mean(fitted(svm_vg_tuned) != vg_test$success);svm_vg_tuned_error
+table(fitted(svm_vg_tuned), vg_test$success);svm_vg_tuned_error
+print(paste("The Tuned SVM Accuracy: ", 1-svm_vg_tuned_error))
+```
+SVM Prediction >> Using a better trained model
+```{r}
+svm_vg_pred <- predict(svm_vg_tuned, newdata = vg_test, type = "reponse")
+svm_vg_pred_error <- mean(svm_vg_pred != vg_test$success);svm_vg_pred_error
+svm_vg_pred_confusion_matrix <- table(svm_vg_pred, vg_test$success);svm_vg_pred_confusion_matrix
+print(paste("The SVM Model Accuracy: ", 1-svm_vg_pred_error))
+```
++-+-+-+-+-+-+
+\newline
++-+-+-+-+-+-+
+
+Predicting Global Sucess >> using EU_Sales
+```{r}
+vg_log_model_all_vars <- glm(success~EU_Sales+Critic_Score, data = vg_train, family = "binomial")
+anova(vg_log_model_all_vars, test="Chisq")
+summary(vg_log_model_all_vars)
+```
+Building Logit Prediction Model to predict if VG will be a hit 
+```{r}
+global_hit_predict <- predict(vg_log_model_all_vars, newdata = vg_test, type = "response")
+global_hit_predict <- ifelse(global_hit_predict >= 0.5, "1", "0")
+cf_matrix_global_hit <- table(global_hit_predict, vg_test$success);cf_matrix_global_hit
+error_global_hit <- mean(global_hit_predict != vg_test$success);error_global_hit
+print(paste("The Logistic Regression Accuracy: ", 1-error_global_hit))
+```
+### Europe Sales Accurcy >> Predicting Global Sales
++-+-+-+-+-+-+
+Lets try a tree model with or EU_sales ### Europe Sales
+```{r}
+tree_vg <- tree(success~EU_Sales+Critic_Score+Genre, data = vg_train)
+summary(tree_vg)
+```
+Lets prune this tree >> Using: "Cross Validation", said Dr Ko.
+```{r}
+set.seed(420)
+cv_tree_vg <- cv.tree(tree_vg, FUN = prune.misclass)
+names(cv_tree_vg)
+cv_tree_vg
+```
+Best tree = 3
+Tree Model for EU_SALES
+```{r}
+prune_tree_vg <- prune.misclass(tree_vg, best=7)
+plot(prune_tree_vg)
+text(prune_tree_vg, pretty = 0)
+```
+\newline +-+-+-+-+-+
+Applying pruned tree to EU_Sales  data
+```{r}
+prune_tree_vg <- prune.misclass(tree_vg, best=8)
+tree_pred_vg <- predict(prune_tree_vg, vg_test, type = "class")
+cf_tree_vg <- table(tree_pred_vg, vg_test$success);cf_tree_vg
+cf_tree_vg_error <- mean(tree_pred_vg != vg_test$success);cf_tree_vg_error
+print(paste("The Tree based method Accuracy: ", 1-cf_tree_vg_error))
+```
+Tree prediction for Global Sales Using EU_Sales
++-+-+-+-+-+-+
+SVM for EU Sales
+```{r}
+svm_vg <- success~EU_Sales+Critic_Score+Platform
+#tune_out <- tune.svm(svm_vg, data = vg_train, gamma=c(0.1, 1, 10, 100, 1000), cost=c(.001, .01, .1, 1, 10))
+summary(tune_out)
+```
+Best Gamma = 0.1; Best Cost = 1; Best Performance = 0.006356307
+\newline -+-+-+-+-+
+SVM >> A better tuned model >> JP_Sales
+```{r}
+svm_vg_tuned <- svm(formula= svm_vg, data = vg_test, gamma = 0.1, cost = 1)
+summary(svm_vg_tuned)
+svm_vg_tuned_error <- mean(fitted(svm_vg_tuned) != vg_test$success);svm_vg_tuned_error
+table(fitted(svm_vg_tuned), vg_test$success);svm_vg_tuned_error
+print(paste("The Tuned SVM Accuracy: ", 1-svm_vg_tuned_error))
+```
+SVM Prediction >> Using a better trained model ## EU_Sales
+```{r}
+svm_vg_pred <- predict(svm_vg_tuned, newdata = vg_test, type = "reponse")
+svm_vg_pred_error <- mean(svm_vg_pred != vg_test$success);svm_vg_pred_error
+svm_vg_pred_confusion_matrix <- table(svm_vg_pred, vg_test$success);svm_vg_pred_confusion_matrix
+print(paste("The SVM Model Accuracy: ", 1-svm_vg_pred_error))
+```
++-+-+-+-+-+-+
+\newline
++-+-+-+-+-+-+
+Predicting Global Sucess >> using Other_Sales
+```{r}
+vg_log_model_all_vars <- glm(success~Other_Sales+Critic_Score, data = vg_train, family = "binomial")
+anova(vg_log_model_all_vars, test="Chisq")
+summary(vg_log_model_all_vars)
+```
+Building Logit Prediction Model to predict if VG will be a hit 
+```{r}
+global_hit_predict <- predict(vg_log_model_all_vars, newdata = vg_test, type = "response")
+global_hit_predict <- ifelse(global_hit_predict >= 0.5, "1", "0")
+cf_matrix_global_hit <- table(global_hit_predict, vg_test$success);cf_matrix_global_hit
+error_global_hit <- mean(global_hit_predict != vg_test$success);error_global_hit
+print(paste("The Logistic Regression Accuracy: ", 1-error_global_hit))
+```
++-+-+-+-+-+-+
+Lets try a tree model with or Other_sales ### Europe Sales
+```{r}
+tree_vg <- tree(success~Other_Sales+Critic_Score+Genre, data = vg_train)
+summary(tree_vg)
+```
+Lets prune this tree >> Using: "Cross Validation", said Dr Ko.
+```{r}
+set.seed(420)
+cv_tree_vg <- cv.tree(tree_vg, FUN = prune.misclass)
+names(cv_tree_vg)
+cv_tree_vg
+```
+Best tree = 3
+```{r}
+prune_tree_vg <- prune.misclass(tree_vg, best=7)
+plot(prune_tree_vg)
+text(prune_tree_vg, pretty = 0)
+```
+\newline +-+-+-+-+-+
+Applying pruned tree to EU_Sales  data
+```{r}
+prune_tree_vg <- prune.misclass(tree_vg, best=6)
+tree_pred_vg <- predict(prune_tree_vg, vg_test, type = "class")
+cf_tree_vg <- table(tree_pred_vg, vg_test$success);cf_tree_vg
+cf_tree_vg_error <- mean(tree_pred_vg != vg_test$success);cf_tree_vg_error
+print(paste("The Tree based method Accuracy: ", 1-cf_tree_vg_error))
+```
+Tree prediction for Global Sales Using EU_Sales
++-+-+-+-+-+-+
+SVM for Other Sales
+```{r}
+svm_vg <- success~Other_Sales+Critic_Score+Platform
+#tune_out <- tune.svm(svm_vg, data = vg_train, gamma=c(0.1, 1, 10, 100, 1000), cost=c(.001, .01, .1, 1, 10))
+summary(tune_out)
+```
+Best Gamma = 0.1; Best Cost = 1; Best Performance = 0.006356307
+\newline -+-+-+-+-+
+SVM >> A better tuned model >> Other_Sales
+```{r}
+svm_vg_tuned <- svm(formula= svm_vg, data = vg_train, gamma = 0.1, cost = 1)
+summary(svm_vg_tuned)
+svm_vg_tuned_error <- mean(fitted(svm_vg_tuned) != vg_test$success);svm_vg_tuned_error
+table(fitted(svm_vg_tuned), vg_train$success);svm_vg_tuned_error
+print(paste("The Tuned SVM Accuracy: ", 1-svm_vg_tuned_error))
+```
+SVM Prediction >> Using a better trained model ## Other_Sales
+```{r}
+svm_vg_pred <- predict(svm_vg_tuned, newdata = vg_test, type = "reponse")
+svm_vg_pred_error <- mean(svm_vg_pred != vg_test$success);svm_vg_pred_error
+svm_vg_pred_confusion_matrix <- table(svm_vg_pred, vg_test$success);svm_vg_pred_confusion_matrix
+print(paste("The SVM Model Accuracy: ", 1-svm_vg_pred_error))
+```
++-+-+-+-+-+-+
+\newline
++-+-+-+-+-+-+
+
+```{r}
+North_America_vg <- vg_final_data
+North_America_vg$EU_Sales <- NULL
+North_America_vg$JP_Sales <- NULL
+North_America_vg$Other_Sales <- NULL
+North_America_vg$Global_Sales <- NULL
+North_America_vg$success <- NULL
+North_America_vg$success <- ifelse(North_America_vg$NA_Sales >= 5.0, "1", "0")
+North_America_vg$success <- factor(North_America_vg$success)
+North_America_vg$NA_Sales[North_America_vg$success==0.0] <- NA
+#North_America_vg$NA_Sales[North_America_vg$NA_Sales==0.0] <- NA
+North_America_vg <- North_America_vg %>% drop_na()
+#set.seed(1984) ##Seeds used: 420, 1776
+#divide_vg_data <- sample(1:6493, size = 0.3*6493)
+#vg_test <- North_America_vg[divide_vg_data,]
+#vg_train <- North_America_vg[-divide_vg_data,]
+```
+Creating Japan_vg dataset
+```{r}
+Japan_vg <- vg_final_data
+Japan_vg$EU_Sales <- NULL
+Japan_vg$NA_Sales <- NULL
+Japan_vg$Other_Sales <- NULL
+Japan_vg$Global_Sales <- NULL
+Japan_vg$success <- NULL
+Japan_vg$success <- ifelse(Japan_vg$JP_Sales >= 1.0, "1", "0")
+Japan_vg$success <- factor(Japan_vg$success)
+Japan_vg$NA_Sales[Japan_vg$success==0.0] <- NA
+#North_America_vg$NA_Sales[North_America_vg$NA_Sales==0.0] <- NA
+Japan_vg <- Japan_vg %>% drop_na()
+#set.seed(1984) ##Seeds used: 420, 1776
+#divide_vg_data <- sample(1:6493, size = 0.3*6493)
+#vg_test <- North_America_vg[divide_vg_data,]
+#vg_train <- North_America_vg[-divide_vg_data,]
+```
++-+-+-+-+-+-+
+\newline
++-+-+-+-+-+-+
+Attepmting to preict Japan_vg sucess
+```{r}
+vg_log_model_all_vars <- glm(success~Genre+Critic_Score, data = vg_train, family = "binomial")
+anova(vg_log_model_all_vars, test="Chisq")
+summary(vg_log_model_all_vars)
+```
+Building Logit Prediction Model to predict if VG will be a hit 
+```{r}
+global_hit_predict <- predict(vg_log_model_all_vars, newdata = vg_test, type = "response")
+global_hit_predict <- ifelse(global_hit_predict >= 5.0, "1", "0")
+cf_matrix_global_hit <- table(global_hit_predict, vg_test$success);cf_matrix_global_hit
+error_global_hit <- mean(global_hit_predict != vg_test$success);error_global_hit
+print(paste("The Logistic Regression Accuracy: ", 1-error_global_hit))
+```
+No luck in predicting Japan_vg
++-+-+-+-+-+-+
+\newline
++-+-+-+-+-+-+
