@@ -1,0 +1,590 @@
+---
+title: "Crypto Currency"
+author: "Mike Mahoney"
+date: "February 7, 2018"
+output: html_document
+---
+
+## https://www.kaggle.com/jessevent/all-crypto-currencies >> Kaggle Link, where Data is obtained from
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("rugarch")  #This will install the Garch package
+library(dplyr)
+library(rugarch)
+library(ggplot2)
+```
+Importing the data set
+```{r}
+crypto_data <- read.csv("C:/Users/Mike/Documents/Data Applications/all-crypto-currencies/crypto-markets.csv")
+```
+
+#Looking at our Data Set, getting a frequency of Symbol >> To see how many Cryptocurrencies are reported
+Created a new Data Set >> crypto_data_1000 >> That includes the Cryptocurrencies with more than 1000 observatioons
+```{r}
+#crpto_data <- NULL
+#summary(crpto_data)
+count <- table(crypto_data$symbol)
+crypto_data_1000 <- crypto_data[crypto_data$symbol %in% names(count)[count >=1000],]
+```
+
+#Adding Days if the week so we can measure violitlity >> i.e: 4/28/13 is Sunday, Sunday has been added in the "day" column for data frame crytpo
+```{r}
+dow <- function(x) format(as.Date(x), "%A")
+crypto_data_update <- dow(crypto_data$date)
+crypto <- crypto_data
+crypto[["day"]] <- crypto_data_update
+
+#Creating a "Day" for crypto_data_1000
+dow <- function(x) format(as.Date(x), "%A")
+crypto_data_update <- dow(crypto_data_1000$date)
+crypto_data_1000[["day"]] <- crypto_data_update
+```
+
+#Getting an Average of Spread based on each day >>> NOTE: This gives the average spread by day
+```{r}
+Day_Spread_Avg <- tapply(Bitcoin$spread, Bitcoin$day, mean);Day_Spread_Avg
+#tapply(df$ID , df$Emotion, mean) 
+```
+
+#### Slicig by Company
+#Bitcoin >> Creating a Bitcoin slice of data to analyze this crytpocurrency
+```{r}
+Bitcoin <- subset(crypto_data_1000, symbol == "BTC")
+
+```
+
+
+#### Applying GARCH model to Bitcoin >> each chanhe in armaOrder is a chnage in how far back to use data
+```{r}
+Bitcoin_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Bitcoin_Garch_1_Results <- ugarchfit(spec = Bitcoin_Garch_1, data = Bitcoin$Close)
+
+Bitcoin_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Bitcoin_Garch_2_Results <- ugarchfit(spec = Bitcoin_Garch_2, data = Bitcoin$Close);#Bitcoin_Garch_2_Results
+
+Bitcoin_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Bitcoin_Garch_3_Results <- ugarchfit(spec = Bitcoin_Garch_3, data = Bitcoin$Close);#Bitcoin_Garch_3_Results
+
+Bitcoin_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(9,9)), distribution.model = "std")
+Bitcoin_Garch_4_Results <- ugarchfit(spec = Bitcoin_Garch_4, data = Bitcoin$Close);#Bitcoin_Garch_4_Results
+
+#Bitcoin_Garch_5 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(15,15)), distribution.model = "std")
+#Bitcoin_Garch_5_Results <- ugarchfit(spec = Bitcoin_Garch_5, data = Bitcoin$close);Bitcoin_Garch_5_Results
+```
+
+##Predicting Using GARCH
+```{r}
+label_list = c("24", "25", "26", "27", "28")
+Bitcoin_Garch_Predict <- ugarchboot(Bitcoin_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+#plot(Bitcoin_Garch_Predict, which = 2, xlab = label_list, xlab = "Bitcoin Volatility")  #plot.window(xlim=c(low, high), ylim=c(high,low)))
+#axis(1, at=1:5, labels = label_list)
+plot(Bitcoin_Garch_Predict, which = 2) #, which = 2, type ="1", xlab = "Time")
+```
+
+
+This Model is currenlty forcasting 5 days >> From 02/05 to 02/10 >> Dark Blue Most Optimistic, Light Blue Pessemistic >> We know that Bitcoin closed at about $8550.00 
+
+## Another GARCH Prediction
+```{r}
+Bitcoin_Garch_Predict_1 <- ugarchboot(Bitcoin_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Bitcoin_Garch_Predict_1, which = 2)
+```
+This Model is currenlty forcasting 5 days >> From 02/05 to 02/10 >> Dark Blue Most Optimistic, Light Blue Pessemistic >> We know that Bitcoin closed at about $8550.00 
+>> Much Better using more days!
+
+
+## Adding the OHLC >> Which is the Opening, High, Low, Close Average to the dataset >> Note: This is only to Bitcoin right now
+```{r}
+i = 1
+for (i in 1:nrow(Bitcoin)) {
+OHLC <- sum(Bitcoin[i,6:9]) #;OHLC
+Bitcoin$OHLC[i] <- OHLC/4
+}
+```
+
+
+## Plotting Bitcoin for 1 year
+```{r}
+Bitcoin$date <- as.Date(Bitcoin$date)
+#df$date <- as.Date(df$date)
+#Bitcoin_1_year <- Bitcoin[date >= "2018-02-05" & date <= "2017-02-05"]
+Bitcoin_1_year <- subset(Bitcoin, date >= "2017-01-01" & date <= "2018-02-05")
+Bitcoin_1_year <- Bitcoin_1_year[order(as.Date(Bitcoin_1_year$date, "%Y-%m-%d"), decreasing = TRUE),]
+```
+
+```{r}
+#library(quantmod)
+#FB <- getSymbols("FB", auto.assign = F)
+#chartSeries(x= FB)
+
+bc <- ggplot(data= Bitcoin_1_year, aes(x = date)) +
+        geom_line(aes(y = Bitcoin$high, color = "red")) + 
+        geom_line(aes(y = Bitcoin$OHLC, color = "black")) +
+        geom_line(aes(y = Bitcoin$low, color = "green"))
+
+bc
+
+
+qplot(date,high, data=Bitcoin_1_year, geom="line")
+qplot(date,Bitcoin_1_year$low, data=Bitcoin_1_year, geom="line")
+```
+
+
+
+####### The previous code was to test our model and get a template >>
+  THe rest of the code will utilize the Web Scraped data "crypto_ws" 
+  >> This code is formating our scraped data to our "fake, 2nd-ary source Kaggle"
+  #### "crypto_ws" >> is our master scraped file denoted by "_ws"
+```{r}
+library(tidyr)
+#test <- read.csv("C:/Users/Mike/Crypto_Scraped_Data.csv")
+ws_2017 <- read.csv("C:/Users/Mike/Crypto_Better_Scrape.csv", stringsAsFactors=FALSE)
+ws_2017 <- ws_2017 %>% drop_na()
+#test_1 <- test
+test_1 <- ws_2017
+```
+
+## This is changing Date into a "Date" >> Also converting our columns to numeric
+```{r}
+test_1$Date <- gsub("/", "" ,test_1$Date)
+test_1$Date <- gsub(" ", "-", test_1$Date)
+#test$Date <- as.Date(test$Date, format = "%y/%m/%d")
+#test_1 <- test
+#nzd$date <- format(as.Date(nzd$date, format = "%b-%d-%Y"), "%Y-%m-%d")
+test_1$Date <- format(as.Date(test_1$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+#test_1$Date <- mdy(test_1$Date)
+crypto_ws <- test_1
+test_1 <- NULL
+test <- NULL
+#crypto_ws <- format(crypto_ws, scientific = FALSE)
+crypto_ws$Open <- as.numeric(crypto_ws$Open, options(digits=10))#options(nsmall=2)) #, scientific = FALSE)
+crypto_ws$High <- as.numeric(crypto_ws$High) #, options(scipen = 999))
+crypto_ws$Low <- as.numeric(crypto_ws$Low, options(digits=10))
+crypto_ws$Close <- as.numeric(crypto_ws$Close, options(digits=10))
+crypto_ws$Volume <- as.numeric(crypto_ws$Volume, options(digits=10))
+crypto_ws$Market.Cap <- as.numeric(crypto_ws$Market.Cap, options(scipen = 999))
+#class(crypto_ws$High)
+#test_1$Date <- as.Date(test$Date, format = "%y/%m/%d")
+```
+
+## Adding our OHLC variable
+```{r}
+i = 1
+for (i in 1:nrow(crypto_ws)) {
+OHLC <- sum(crypto_ws[i,3:6]) #;OHLC
+crypto_ws$OHLC[i] <- OHLC/4
+}
+```
+
+## Adding Spread variable
+```{r}
+crypto_ws$Spread <- NULL
+i = 1
+for (i in 1:nrow(crypto_ws)) {
+Spread <- (crypto_ws$High - crypto_ws$Low)
+crypto_ws$Spread[i] <- Spread[i]
+}
+```
+
+#Adding Days if the week so we can measure violitlity >> i.e: 4/28/13 is Sunday, Sunday has been added in the "day" column for data frame crytpo
+```{r}
+dow <- function(x) format(as.Date(x), "%A")
+crypto_data_update <- dow(crypto_ws$Date)
+crypto <- crypto_ws
+crypto[["Day"]] <- crypto_data_update
+
+```
+
+#### Now that we have "crypto_ws" >> Properly formatted lets get to business
+
+#####Dogecoin >> Such a cute puppy
+# Creating a Subset for each cryptocurrency we want to evaluate >> #cryp_list = ["bitcoin", "dogecoin", "ethereum", "ripple", "litecoin", "neo", "maker", "tether"]
+## Note: "ripple" was not completely scrapped due to... "server issues" >> Working on it!
+#    & Maker is a newer currecny
+```{r}
+Bitcoin <- subset(crypto_ws, Slug == "bitcoin")
+Dogecoin <- subset(crypto_ws, Slug == "dogecoin")
+Ethereum <-  subset(crypto_ws, Slug == "ethereum")
+Ripple <-  subset(crypto_ws, Slug == "ripple")
+Litecoin <-  subset(crypto_ws, Slug == "litecoin")
+Neo <-  subset(crypto_ws, Slug == "neo")
+Maker <-  subset(crypto_ws, Slug == "maker")
+Tether <-  subset(crypto_ws, Slug == "tether")
+```
+########### Ok Inverting our dataset >> I was an ID10T, This is a problem solver! >> Everything should work now!!!!
+
+```{r}
+Bitcoin <- Bitcoin[rev(rownames(Bitcoin)),]
+Dogecoin <- Dogecoin[rev(rownames(Dogecoin)),]
+Ethereum <- Ethereum[rev(rownames(Ethereum)),]
+Ripple <- Ripple[rev(rownames(Ripple)),]
+Litecoin <- Litecoin[rev(rownames(Litecoin)),]
+Neo <- Neo[rev(rownames(Neo)),]
+Maker <- Maker[rev(rownames(Maker)),]
+Tether <- Tether[rev(rownames(Tether)),]
+```
+
+
+####### Creating the variables for Bitcoin_Ancient
+## Loading the Ancient Bitcoin Data >> Applying thr similar formats >> to Bitcoin_Ancient
+```{r}
+Bitcoin_Ancient <- read.csv("C:/Users/Mike/Bitcoin_Scrape.csv")
+
+Bitcoin_Ancient$Date <- gsub("/", "" ,Bitcoin_Ancient$Date)
+Bitcoin_Ancient$Date <- gsub(" ", "-", Bitcoin_Ancient$Date)
+Bitcoin_Ancient$Date <- format(as.Date(Bitcoin_Ancient$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+#crypto_ws <- format(crypto_ws, scientific = FALSE)
+Bitcoin_Ancient$Open <- as.numeric(Bitcoin_Ancient$Open, options(digits=10))#options(nsmall=2)) #, scientific = FALSE)
+Bitcoin_Ancient$High <- as.numeric(Bitcoin_Ancient$High) #, options(scipen = 999))
+Bitcoin_Ancient$Low <- as.numeric(Bitcoin_Ancient$Low, options(digits=10))
+Bitcoin_Ancient$Close <- as.numeric(Bitcoin_Ancient$Close, options(digits=10))
+Bitcoin_Ancient$Volume <- as.numeric(Bitcoin_Ancient$Volume, options(scipen = 999))
+Bitcoin_Ancient$Market.Cap <- as.numeric(Bitcoin_Ancient$Market.Cap, options(scipen = 999))
+
+
+## OHLC for Bitcoin_Ancient
+
+i = 1
+for (i in 1:nrow(Bitcoin_Ancient)) {
+OHLC <- sum(Bitcoin_Ancient[i,3:6]) #;OHLC
+Bitcoin_Ancient$OHLC[i] <- OHLC/4
+}
+
+
+## Adding Spread variable for Bitcoin_Ancient
+
+#crypto_ws$Spread <- NULL
+i = 1
+for (i in 1:nrow(Bitcoin_Ancient)) {
+Spread <- (Bitcoin_Ancient$High - Bitcoin_Ancient$Low)
+Bitcoin_Ancient$Spread[i] <- Spread[i]
+}
+
+
+## Appending Our Data Sets >> Merging the Bitcoin subset with the scrape from 04/28/13 to 12/31/2016
+
+#Bitcoin_Ancient <- read.csv("C:/Users/Mike/Bitcoin_Scrape.csv")
+Bitcoin <- subset(crypto_ws, Slug == "bitcoin")
+Bitcoin_merge <- rbind(Bitcoin, Bitcoin_Ancient)
+Bitcoin <- Bitcoin_merge
+#Bitcoin$OHLC <- round(Bitcoin$OHLC, digits = -2)
+Bitcoin_merge <- NULL
+```
+
+####### Creating the variables for Ripple_Ancient
+## Loading the Ripple Bitcoin Data >> Applying thr similar formats >> to Ripple_Ancient
+```{r}
+Ripple_Ancient <- read.csv("C:/Users/Mike/Ripple_Scrape.csv")
+
+Ripple_Ancient$Date <- gsub("/", "" ,Ripple_Ancient$Date)
+Ripple_Ancient$Date <- gsub(" ", "-", Ripple_Ancient$Date)
+Ripple_Ancient$Date <- format(as.Date(Ripple_Ancient$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+#crypto_ws <- format(crypto_ws, scientific = FALSE)
+Ripple_Ancient$Open <- as.numeric(Ripple_Ancient$Open, options(digits=10))#options(nsmall=2)) #, scientific = FALSE)
+Ripple_Ancient$High <- as.numeric(Ripple_Ancient$High) #, options(scipen = 999))
+Ripple_Ancient$Low <- as.numeric(Ripple_Ancient$Low, options(digits=10))
+Ripple_Ancient$Close <- as.numeric(Ripple_Ancient$Close, options(digits=10))
+Ripple_Ancient$Volume <- as.numeric(Ripple_Ancient$Volume, options(scipen = 999))
+Ripple_Ancient$Market.Cap <- as.numeric(Ripple_Ancient$Market.Cap, options(scipen = 999))
+
+
+## OHLC for Litecoin_Ancient
+
+i = 1
+for (i in 1:nrow(Ripple_Ancient)) {
+OHLC <- sum(Ripple_Ancient[i,3:6]) #;OHLC
+Ripple_Ancient$OHLC[i] <- OHLC/4
+}
+
+
+## Adding Spread variable for Litecoin_Ancient
+
+#crypto_ws$Spread <- NULL
+i = 1
+for (i in 1:nrow(Ripple_Ancient)) {
+Spread <- (Ripple_Ancient$High - Ripple_Ancient$Low)
+Ripple_Ancient$Spread[i] <- Spread[i]
+}
+
+
+## Appending Our Data Sets >> Merging the Litecoin subset with the scrape from 01/01/2017 to 09/07/2017
+
+#Bitcoin_Ancient <- read.csv("C:/Users/Mike/Bitcoin_Scrape.csv")
+Ripple <- subset(crypto_ws, Slug == "ripple")
+Ripple_Merge <- rbind(Ripple, Ripple_Ancient) 
+Ripple <- Ripple_Merge
+Ripple_Merge <- NULL
+```
+
+#####Dogecoin >> Such a cute puppy
+## Dogecoin GARCH model building! >> We are using the OHLC variable this time >>
+```{r}
+Dogecoin_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Dogecoin_Garch_1_Results <- ugarchfit(spec = Dogecoin_Garch_1, data = Dogecoin$Close)
+
+Dogecoin_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Dogecoin_Garch_2_Results <- ugarchfit(spec = Dogecoin_Garch_2, data = Dogecoin$Close)#;Dogecoin_Garch_2_Results
+
+Dogecoin_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Dogecoin_Garch_3_Results <- ugarchfit(spec = Dogecoin_Garch_3, data = Dogecoin$Close)#;Dogecoin_Garch_3_Results
+
+Dogecoin_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(9,9)), distribution.model = "std")
+Dogecoin_Garch_4_Results <- ugarchfit(spec = Dogecoin_Garch_4, data = Dogecoin$Close)#;Dogecoin_Garch_4_Results
+```
+
+## Predicting Dogecoin 5 days out >> Using 3 days
+```{r}
+#Dogecoin_Garch_Predict <- ugarchforecast(Dogecoin_Garch_3_Results, n.ahead = 5)
+
+Dogecoin_Garch_Predict <- ugarchboot(Dogecoin_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Dogecoin_Garch_Predict, which = 2)
+```
+## Predicting Dogecoin 5 days out >> Using 9 days
+```{r}
+Dogecoin_Garch_Predict_1 <- ugarchboot(Dogecoin_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Dogecoin_Garch_Predict_1, which = 2)
+```
+
+## Ethereum GARCH model building! >> We are using the Close variable this time >>
+```{r}
+Ethereum_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Ethereum_Garch_1_Results <- ugarchfit(spec = Ethereum_Garch_1, data = Ethereum$Close)
+
+Ethereum_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Ethereum_Garch_2_Results <- ugarchfit(spec = Ethereum_Garch_2, data = Ethereum$Close)#;Ethereum_Garch_2_Results
+
+Ethereum_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Ethereum_Garch_3_Results <- ugarchfit(spec = Ethereum_Garch_3, data = Ethereum$Close)#;Ethereum_Garch_3_Results
+
+Ethereum_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(7,7)), distribution.model = "std")
+Ethereum_Garch_4_Results <- ugarchfit(spec = Ethereum_Garch_4, data = Ethereum$Close)#;Ethereum_Garch_4_Results
+```
+
+## Predicting Ethereum 5 days out >> Using 3 days
+```{r}
+Ethereum_Garch_Predict <- ugarchboot(Ethereum_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Ethereum_Garch_Predict, which = 2)
+```
+
+# Predicting Ethereum 5 days out >> Using 7 days
+```{r}
+Ethereum_Garch_Predict_1 <- ugarchboot(Ethereum_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Ethereum_Garch_Predict_1, which = 2)
+```
+
+## Ripple GARCH model building! >> We are using the Close variable this time >>
+```{r}
+Ripple_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Ripple_Garch_1_Results <- ugarchfit(spec = Ripple_Garch_1, data = Ripple$Close)
+
+Ripple_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Ripple_Garch_2_Results <- ugarchfit(spec = Ripple_Garch_2, data = Ripple$Close)#;Ripple_Garch_2_Results
+
+Ripple_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Ripple_Garch_3_Results <- ugarchfit(spec = Ripple_Garch_3, data = Ripple$Close)#;Ripple_Garch_3_Results
+
+Ripple_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(7,7)), distribution.model = "std")
+Ripple_Garch_4_Results <- ugarchfit(spec = Ripple_Garch_4, data = Ripple$Close)#;Ripple_Garch_4_Results
+```
+
+## Predicting Ripple 5 days out >> Using 3 days
+```{r}
+Ripple_Garch_Predict <- ugarchboot(Ripple_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Ripple_Garch_Predict, which = 2)
+```
+## Predicting Ripple 5 days out >> Using 7 days
+```{r}
+Ripple_Garch_Predict_1 <- ugarchboot(Ripple_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Ripple_Garch_Predict_1, which = 2)
+```
+
+## Litecoin GARCH model building! >> We are using the Close variable this time >>
+```{r}
+Litecoin_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Litecoin_Garch_1_Results <- ugarchfit(spec = Litecoin_Garch_1, data = Litecoin$Close)
+
+Litecoin_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Litecoin_Garch_2_Results <- ugarchfit(spec = Litecoin_Garch_2, data = Litecoin$Close)#;Litecoin_Garch_2_Results
+
+Litecoin_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Litecoin_Garch_3_Results <- ugarchfit(spec = Litecoin_Garch_3, data = Litecoin$Close)#;Ripple_Garch_3_Results
+
+Litecoin_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(8,8)), distribution.model = "std")
+Litecoin_Garch_4_Results <- ugarchfit(spec = Litecoin_Garch_4, data = Litecoin$Close)#;Ripple_Garch_4_Results
+```
+
+## Predicting Litecoin 5 days out >> Using 3 days
+```{r}
+Litecoin_Garch_Predict <- ugarchboot(Litecoin_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Litecoin_Garch_Predict, which = 2)
+```
+## Predicting Litecoin 5 days out >> Using 8 days >> Dark Blue Most Optimistic, Light Blue Pessemistic
+```{r}
+Litecoin_Garch_Predict_1 <- ugarchboot(Litecoin_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Litecoin_Garch_Predict_1, which = 2)
+```
+
+## Neo GARCH model building! >> We are using the Close variable this time >>
+```{r}
+Neo_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Neo_Garch_1_Results <- ugarchfit(spec = Neo_Garch_1, data = Neo$Close)
+
+Neo_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Neo_Garch_2_Results <- ugarchfit(spec = Neo_Garch_2, data = Neo$Close)#;Neo_Garch_2_Results
+
+Neo_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Neo_Garch_3_Results <- ugarchfit(spec = Neo_Garch_3, data = Neo$Close)#;Neo_Garch_3_Results
+
+Neo_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(8,8)), distribution.model = "std")
+Neo_Garch_4_Results <- ugarchfit(spec = Neo_Garch_4, data = Neo$Close)#;Neo_Garch_4_Results
+```
+
+## Predicting Litecoin 5 days out >> Using 3 days
+```{r}
+Neo_Garch_Predict <- ugarchboot(Neo_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Neo_Garch_Predict, which = 2)
+```
+## Predicting Litecoin 5 days out >> Using 8 days
+```{r}
+Neo_Garch_Predict_1 <- ugarchboot(Neo_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Neo_Garch_Predict_1, which = 2)
+```
+
+## Maker GARCH model building! >> We are using the Close variable this time >>
+```{r}
+Maker_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Maker_Garch_1_Results <- ugarchfit(spec = Maker_Garch_1, data = Maker$Close)
+
+Maker_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Maker_Garch_2_Results <- ugarchfit(spec = Maker_Garch_2, data = Maker$Close)#;Maker_Garch_2_Results
+
+Maker_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Maker_Garch_3_Results <- ugarchfit(spec = Maker_Garch_3, data = Maker$Close)#;Maker_Garch_3_Results
+
+Maker_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(6,6)), distribution.model = "std")
+Maker_Garch_4_Results <- ugarchfit(spec = Maker_Garch_4, data = Maker$Close)#;Maker_Garch_4_Results
+```
+
+## Predicting Maker 5 days out >> Using 3 days >> Dark Blue Most Optimistic, Light Blue Pessemistic
+```{r}
+Maker_Garch_Predict <- ugarchboot(Maker_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Maker_Garch_Predict, which = 2)
+```
+## Predicting Maker 5 days out >> Using 6 days >> Dark Blue Most Optimistic, Light Blue Pessemistic
+```{r}
+Maker_Garch_Predict_1 <- ugarchboot(Maker_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Maker_Garch_Predict_1, which = 2)
+```
+
+
+## Tether GARCH model building! >> We are using the Close variable this time >>
+```{r}
+Tether_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Tether_Garch_1_Results <- ugarchfit(spec = Tether_Garch_1, data = Tether$Close)
+
+Tether_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Tether_Garch_2_Results <- ugarchfit(spec = Tether_Garch_2, data = Tether$Close)#;Tether_Garch_2_Results
+
+Tether_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Tether_Garch_3_Results <- ugarchfit(spec = Tether_Garch_3, data = Tether$Close)#;Tether_Garch_3_Results
+
+Tether_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(10,10)), distribution.model = "std")
+Tether_Garch_4_Results <- ugarchfit(spec = Tether_Garch_4, data = Tether$Close)#;Tether_Garch_4_Results
+```
+
+## Predicting Tether 5 days out >> Using 3 days
+```{r}
+Tether_Garch_Predict <- ugarchboot(Tether_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Tether_Garch_Predict, which = 2)
+```
+## Predicting Tether 5 days out >> Using 6 days >> Dark Blue Most Optimistic, Light Blue Pessemistic
+```{r}
+Tether_Garch_Predict_1 <- ugarchboot(Tether_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Tether_Garch_Predict_1, which = 2)
+```
+
+#### Applying GARCH model to Bitcoin >> each chanhe in armaOrder is a chnage in how far back to use data
+```{r}
+Bitcoin_Garch_1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "std")
+Bitcoin_Garch_1_Results <- ugarchfit(spec = Bitcoin_Garch_1, data = Bitcoin$Close)
+
+Bitcoin_Garch_2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(2,2)), distribution.model = "std")
+Bitcoin_Garch_2_Results <- ugarchfit(spec = Bitcoin_Garch_2, data = Bitcoin$Close);#Bitcoin_Garch_2_Results
+
+Bitcoin_Garch_3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(3,3)), distribution.model = "std")
+Bitcoin_Garch_3_Results <- ugarchfit(spec = Bitcoin_Garch_3, data = Bitcoin$Close);#Bitcoin_Garch_3_Results
+
+Bitcoin_Garch_4 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(9,9)), distribution.model = "std")
+Bitcoin_Garch_4_Results <- ugarchfit(spec = Bitcoin_Garch_4, data = Bitcoin$Close);#Bitcoin_Garch_4_Results
+
+#Bitcoin_Garch_5 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder=c(15,15)), distribution.model = "std")
+#Bitcoin_Garch_5_Results <- ugarchfit(spec = Bitcoin_Garch_5, data = Bitcoin$close);Bitcoin_Garch_5_Results
+```
+
+##Predicting Using GARCH
+```{r}
+label_list = c("24", "25", "26", "27", "28")
+Bitcoin_Garch_Predict <- ugarchboot(Bitcoin_Garch_3_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+#plot(Bitcoin_Garch_Predict, which = 2, xlab = label_list, xlab = "Bitcoin Volatility")  #plot.window(xlim=c(low, high), ylim=c(high,low)))
+#axis(1, at=1:5, labels = label_list)
+plot(Bitcoin_Garch_Predict, which = 2) #, which = 2, type ="1", xlab = "Time")
+```
+
+
+This Model is currenlty forcasting 5 days >> From 02/05 to 02/10 >> Dark Blue Most Optimistic, Light Blue Pessemistic >> We know that Bitcoin closed at about $8550.00 
+
+## Another GARCH Prediction
+```{r}
+Bitcoin_Garch_Predict_1 <- ugarchboot(Bitcoin_Garch_4_Results, n.ahead = 5, method = c("Partial", "Full")[1])
+plot(Bitcoin_Garch_Predict_1, which = 2)
+```
+
+
+## Getting the last day of each currency's Market Cap
+```{r}
+market_cap_final <- subset(crypto_ws, Date == "2018-02-23")
+```
+
+## Loading Scraped Data >> To test Model
+```{r}
+cyrpt_test_model <- read.csv("C:/Users/Mike/Crypto_Garch_Pred_Days.csv", skipNul = TRUE)
+cyrpt_test_model$Date <- gsub("/", "" ,cyrpt_test_model$Date)
+cyrpt_test_model$Date <- gsub(" ", "-", cyrpt_test_model$Date)
+cyrpt_test_model$Date <- format(as.Date(cyrpt_test_model$Date, format = "%b-%d-%Y"), "%Y-%m-%d")
+cyrpt_test_model <- subset(cyrpt_test_model, Date >= "2018-02-23")
+## OHLC for cyrpt_test_model
+
+i = 1
+for (i in 1:nrow(cyrpt_test_model)) {
+OHLC <- sum(cyrpt_test_model[i,3:6]) #;OHLC
+cyrpt_test_model$OHLC[i] <- OHLC/4
+}
+
+```
+
+## Getting some stats on our Days our GARCH model is testing
+```{r}
+library(dplyr)
+test_stat <- cyrpt_test_model %>%
+  group_by(Slug) %>%
+  summarize(mean = mean(OHLC),
+            std = sd(OHLC))
+```
+
+### Getting some stats for Bitcoin, Ethereum, Maker>> OHLC volatility
+```{r}
+bitcoin_OHLC_stat <- Bitcoin %>%
+  summarise(mean = mean(OHLC),
+            std = sd(OHLC))
+ethereum_OHLC_stat <- Ethereum %>%
+  summarise(mean = mean(OHLC),
+            std = sd(OHLC))
+maker_OHLC_stat <- Maker %>%
+  summarise(mean = mean(OHLC),
+            std = sd(OHLC))
+Tether %>%
+  summarise(mean = mean(OHLC),
+            std = sd(OHLC))
+```
+
